@@ -1,5 +1,5 @@
 {
-  "name": "iptv-proxy",
+  "name": "iptv-proxy-final",
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
