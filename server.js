@@ -5,22 +5,37 @@ const app = express();
 
 app.use(cors());
 
-// Ez a végpont tölti le és alakítja át az M3U listát
-app.get('/playlist', async (req, res) => {
+// Ez a rész generálja az IPTV Pro számára a "módosított" listát
+app.get('/list.m3u', async (req, res) => {
     const m3uUrl = "http://moteltv.sooyya.xyz:8080/get.php?username=proba1&password=y85DbAqU&type=m3u_plus&output=ts";
+    const myDomain = req.protocol + '://' + req.get('host'); // Megtudja a saját Render-es címedet
+
     try {
         const response = await axios.get(m3uUrl);
-        // Itt nem módosítjuk a linkeket, a frontend fogja a proxy-n keresztül hívni őket
-        res.send(response.data);
+        let m3uContent = response.data;
+
+        // Minden http linket kicserélünk a mi proxy-s linkünkre
+        // Eredeti: http://szerver.com/valami.ts
+        // Új: https://fasz9.onrender.com/proxy?url=http://szerver.com/valami.ts
+        const lines = m3uContent.split('\n');
+        const modifiedLines = lines.map(line => {
+            if (line.startsWith('http')) {
+                return `${myDomain}/proxy?url=${encodeURIComponent(line.trim())}`;
+            }
+            return line;
+        });
+
+        res.setHeader('Content-Type', 'audio/x-mpegurl');
+        res.send(modifiedLines.join('\n'));
     } catch (error) {
-        res.status(500).send("Hiba a lista letöltésekor");
+        res.status(500).send("Hiba a lista generálásakor.");
     }
 });
 
-// Ez a végpont közvetíti a konkrét videó adást (Proxy)
+// A videó közvetítő (Proxy) változatlan marad
 app.get('/proxy', async (req, res) => {
     const streamUrl = req.query.url;
-    if (!streamUrl) return res.status(400).send("Nincs URL megadva");
+    if (!streamUrl) return res.status(400).send("Nincs URL");
 
     try {
         const response = await axios({
@@ -29,11 +44,12 @@ app.get('/proxy', async (req, res) => {
             responseType: 'stream',
             headers: { 'User-Agent': 'Mozilla/5.0' }
         });
-        res.setHeader('Content-Type', response.headers['content-type'] || 'video/mp2t');
+        res.setHeader('Content-Type', 'video/mp2t');
         response.data.pipe(res);
     } catch (e) {
         res.status(500).send("Stream hiba");
     }
 });
 
-app.listen(3000, () => console.log("Szerver fut: http://localhost:3000"));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Szerver fut a ${PORT} porton`));
