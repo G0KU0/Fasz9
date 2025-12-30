@@ -6,18 +6,16 @@ const app = express();
 
 app.use(cors());
 
-// Az IPTV lista forrása
 const TARGET_URL = "http://moteltv.sooyya.xyz:8080/get.php?username=proba1&password=y85DbAqU&type=m3u_plus&output=ts";
 
+// A FŐOLDAL marad a webes lejátszó (https://fasz9.onrender.com)
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// LISTA LEKÉRÉSE EXTRA PROXY-VAL
+// A LISTA (https://fasz9.onrender.com/list.m3u)
 app.get('/list.m3u', async (req, res) => {
-    console.log("Stealth lista kérés indítása...");
-    
-    // Egy külső API-t használunk, hogy ne a Render IP-je látszódjon
+    console.log("M3U fájl generálása indítása...");
     const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(TARGET_URL)}`;
 
     try {
@@ -28,22 +26,25 @@ app.get('/list.m3u', async (req, res) => {
         const lines = response.data.split('\n');
         const modifiedLines = lines.map(line => {
             if (line.trim().startsWith('http')) {
-                // A videó streamet is ezen a szerveren keresztül küldjük
                 return `${myDomain}/proxy?url=${encodeURIComponent(line.trim())}`;
             }
             return line;
         });
 
+        const finalM3U = modifiedLines.join('\n');
+
+        // KÉNYSZERÍTETT LETÖLTÉS BEÁLLÍTÁSAI
         res.setHeader('Content-Type', 'audio/x-mpegurl');
-        res.send(modifiedLines.join('\n'));
-        console.log("Siker! A lista átment.");
+        res.setHeader('Content-Disposition', 'attachment; filename="playlist.m3u"'); // Ettől lesz letölthető fájl
+        res.send(finalM3U);
+        
+        console.log("Siker: A fájl kiküldve letöltésre.");
     } catch (error) {
-        console.error("MÉG MINDIG BLOKKOLVA:", error.message);
-        res.status(500).send("A szolgáltató minden kaput bezárt a Render előtt.");
+        console.error("HIBA:", error.message);
+        res.status(500).send("A szerver nem tudta elkészíteni a fájlt (459-es tiltás miatt).");
     }
 });
 
-// VIDEÓ PROXY
 app.get('/proxy', async (req, res) => {
     const streamUrl = req.query.url;
     try {
@@ -51,10 +52,7 @@ app.get('/proxy', async (req, res) => {
             method: 'get',
             url: streamUrl,
             responseType: 'stream',
-            headers: { 
-                'User-Agent': 'VLC/3.0.18 LibVLC/3.0.18', // VLC-nek álcázzuk magunkat
-                'Icy-MetaData': '1'
-            }
+            headers: { 'User-Agent': 'VLC/3.0.18' }
         });
         res.setHeader('Content-Type', 'video/mp2t');
         response.data.pipe(res);
@@ -64,4 +62,4 @@ app.get('/proxy', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Stealth szerver fut a ${PORT} porton`));
+app.listen(PORT, () => console.log(`Szerver fut a ${PORT} porton`));
