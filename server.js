@@ -6,31 +6,29 @@ const app = express();
 
 app.use(cors());
 
-const M3U_URL = "http://moteltv.sooyya.xyz:8080/get.php?username=proba1&password=y85DbAqU&type=m3u_plus&output=ts";
+// Az IPTV lista forrása
+const TARGET_URL = "http://moteltv.sooyya.xyz:8080/get.php?username=proba1&password=y85DbAqU&type=m3u_plus&output=ts";
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// LISTA LEKÉRÉSE EXTRA PROXY-VAL
 app.get('/list.m3u', async (req, res) => {
-    console.log("Lista kérés érkezett, álcázás indítása...");
-    try {
-        const protocol = req.headers['x-forwarded-proto'] || 'http';
-        const myDomain = protocol + '://' + req.get('host');
-        
-        const response = await axios.get(M3U_URL, { 
-            timeout: 15000,
-            headers: {
-                // Álcázzuk magunkat egy népszerű IPTV lejátszónak
-                'User-Agent': 'IPTVSmartersPlayer',
-                'Accept': '*/*',
-                'Connection': 'keep-alive'
-            }
-        });
+    console.log("Stealth lista kérés indítása...");
+    
+    // Egy külső API-t használunk, hogy ne a Render IP-je látszódjon
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(TARGET_URL)}`;
 
+    try {
+        const response = await axios.get(proxyUrl, { timeout: 20000 });
+        const protocol = req.headers['x-forwarded-proto'] || 'http';
+        const myDomain = `${protocol}://${req.get('host')}`;
+        
         const lines = response.data.split('\n');
         const modifiedLines = lines.map(line => {
             if (line.trim().startsWith('http')) {
+                // A videó streamet is ezen a szerveren keresztül küldjük
                 return `${myDomain}/proxy?url=${encodeURIComponent(line.trim())}`;
             }
             return line;
@@ -38,23 +36,24 @@ app.get('/list.m3u', async (req, res) => {
 
         res.setHeader('Content-Type', 'audio/x-mpegurl');
         res.send(modifiedLines.join('\n'));
+        console.log("Siker! A lista átment.");
     } catch (error) {
-        // Ha továbbra is 459-et kapunk, kiírjuk a részleteket
-        console.error("LISTA HIBA (459 továbbra is fennállhat):", error.message);
-        res.status(500).send("A szolgáltató blokkolja a szervert (Error 459).");
+        console.error("MÉG MINDIG BLOKKOLVA:", error.message);
+        res.status(500).send("A szolgáltató minden kaput bezárt a Render előtt.");
     }
 });
 
+// VIDEÓ PROXY
 app.get('/proxy', async (req, res) => {
     const streamUrl = req.query.url;
-    if (!streamUrl) return res.status(400).send("Nincs URL");
     try {
         const response = await axios({
             method: 'get',
             url: streamUrl,
             responseType: 'stream',
             headers: { 
-                'User-Agent': 'IPTVSmartersPlayer' 
+                'User-Agent': 'VLC/3.0.18 LibVLC/3.0.18', // VLC-nek álcázzuk magunkat
+                'Icy-MetaData': '1'
             }
         });
         res.setHeader('Content-Type', 'video/mp2t');
@@ -65,4 +64,4 @@ app.get('/proxy', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Szerver aktiválva a ${PORT} porton`));
+app.listen(PORT, () => console.log(`Stealth szerver fut a ${PORT} porton`));
