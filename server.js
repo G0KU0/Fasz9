@@ -6,23 +6,28 @@ const app = express();
 
 app.use(cors());
 
-// Ellenőrizzük, hogy a szerver egyáltalán elindul-e
-console.log("Szerver kód betöltve...");
-
 const M3U_URL = "http://moteltv.sooyya.xyz:8080/get.php?username=proba1&password=y85DbAqU&type=m3u_plus&output=ts";
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Ez a kritikus rész az IPTV Pro-nak
 app.get('/list.m3u', async (req, res) => {
-    console.log("Lista kérés érkezett!"); // Ezt látnod kell a Logs-ban!
+    console.log("Lista kérés érkezett, álcázás indítása...");
     try {
-        const response = await axios.get(M3U_URL, { timeout: 15000 });
         const protocol = req.headers['x-forwarded-proto'] || 'http';
         const myDomain = protocol + '://' + req.get('host');
         
+        const response = await axios.get(M3U_URL, { 
+            timeout: 15000,
+            headers: {
+                // Álcázzuk magunkat egy népszerű IPTV lejátszónak
+                'User-Agent': 'IPTVSmartersPlayer',
+                'Accept': '*/*',
+                'Connection': 'keep-alive'
+            }
+        });
+
         const lines = response.data.split('\n');
         const modifiedLines = lines.map(line => {
             if (line.trim().startsWith('http')) {
@@ -34,8 +39,9 @@ app.get('/list.m3u', async (req, res) => {
         res.setHeader('Content-Type', 'audio/x-mpegurl');
         res.send(modifiedLines.join('\n'));
     } catch (error) {
-        console.error("LISTA HIBA:", error.message);
-        res.status(500).send("Hiba a lista letöltésekor: " + error.message);
+        // Ha továbbra is 459-et kapunk, kiírjuk a részleteket
+        console.error("LISTA HIBA (459 továbbra is fennállhat):", error.message);
+        res.status(500).send("A szolgáltató blokkolja a szervert (Error 459).");
     }
 });
 
@@ -47,14 +53,16 @@ app.get('/proxy', async (req, res) => {
             method: 'get',
             url: streamUrl,
             responseType: 'stream',
-            headers: { 'User-Agent': 'Mozilla/5.0' }
+            headers: { 
+                'User-Agent': 'IPTVSmartersPlayer' 
+            }
         });
         res.setHeader('Content-Type', 'video/mp2t');
         response.data.pipe(res);
     } catch (e) {
-        res.status(500).send("Proxy hiba");
+        res.status(500).send("Stream hiba");
     }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Szerver aktiválva a ${PORT} porton`));
